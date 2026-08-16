@@ -15,3 +15,7 @@
 
 ## 類型
 - 視覺小說／選項劇情：多日曆、好感、多結局。
+
+## Original release work
+
+The interface graphics, canvas art, synthesized music, and sound effects in this release are original procedural work created for **潮生鎮誌**. The third-party packs listed above remain bundled for provenance but are not loaded at runtime.
