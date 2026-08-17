@@ -1,1 +1,118 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0d10"><link rel="stylesheet" href="./styles.css"><title>Game</title></head><body><main><header><div><small id="genre"></small><h1 id="title"></h1></div><button id="sound" aria-pressed="false">♫ 音效</button></header><section id="intro"><div class="sigil">◆</div><p id="help"></p><button id="start" class="primary">進入遊戲</button><a href="./ATTRIBUTION.md">製作與素材署名</a></section><section id="game" hidden><div id="stats"></div><div id="scene"></div><p id="message" aria-live="polite"></p><div id="actions"></div></section></main><script type="module" src="./app.js"></script></body></html>
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d10" />
+  <title>潮生鎮誌</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <p class="eyebrow">TOWNSHIP CHRONICLE · 7 DAYS</p>
+        <h1 id="title">潮生鎮誌</h1>
+      </div>
+      <button id="btn-sound" class="icon-btn" type="button" aria-pressed="true" aria-label="關閉音效">♪</button>
+    </header>
+
+    <section id="intro" class="intro">
+      <div class="intro-card">
+        <p class="stamp">採訪・好感・多結局</p>
+        <p id="brief" class="brief"></p>
+        <dl class="intro-meta">
+          <div><dt>天數</dt><dd>7 日</dd></div>
+          <div><dt>時段</dt><dd>上午／下午</dd></div>
+          <div><dt>鎮民</dt><dd>3 人</dd></div>
+        </dl>
+        <p id="record" class="record" hidden></p>
+        <button id="btn-start" class="primary" type="button">開始採訪</button>
+        <button id="btn-continue" class="ghost" type="button" hidden>接續採訪</button>
+      </div>
+    </section>
+
+    <section id="play" class="play" hidden>
+      <div class="hud">
+        <p id="cal-label" class="cal-label"></p>
+        <div id="day-track" class="day-track" aria-label="七日曆"></div>
+        <div class="stats">
+          <span>體力 <b id="energy">0</b></span>
+          <span>金錢 <b id="money">0</b></span>
+          <span>記憶 <b id="memories">0</b></span>
+          <span>信任 <b id="trust">0</b></span>
+        </div>
+        <div id="affection" class="affection" aria-label="好感"></div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-frame">
+          <div class="art" id="art" aria-hidden="true"></div>
+        </div>
+        <p class="narration" id="narration" aria-live="polite"></p>
+      </div>
+
+      <div id="schedule-actions" class="panel-block"></div>
+
+      <div id="dialogue" class="panel-block dialogue" hidden>
+        <div class="dialogue-head">
+          <div id="dialogue-portrait" class="portrait"></div>
+          <div>
+            <p id="dialogue-name" class="who"></p>
+            <p id="dialogue-role" class="role"></p>
+          </div>
+        </div>
+        <blockquote id="dialogue-line"></blockquote>
+        <div id="dialogue-choices" class="choice-grid"></div>
+        <div id="dialogue-gifts" class="gift-row"></div>
+      </div>
+
+      <div id="shop" class="panel-block shop" hidden>
+        <p class="section-title">早市備禮</p>
+        <div id="shop-list" class="shop-grid"></div>
+        <p class="section-title">背包</p>
+        <p id="bag-list" class="bag-list"></p>
+        <button id="btn-shop-done" class="primary" type="button">離開早市</button>
+      </div>
+
+      <div id="ending" class="panel-block ending" hidden>
+        <p id="ending-mark" class="ending-mark">完稿</p>
+        <h2 id="ending-title"></h2>
+        <p id="ending-text" class="ending-text"></p>
+        <p id="ending-score" class="ending-score"></p>
+        <button id="btn-restart" class="primary" type="button">再寫一鎮</button>
+      </div>
+
+      <section class="journal" aria-label="採訪日誌">
+        <h2>採訪日誌</h2>
+        <ul id="log" class="log-list"></ul>
+      </section>
+
+      <button id="btn-clear-save" class="ghost small" type="button">清除存檔</button>
+    </section>
+
+    <div id="confirm-clear" class="confirm" hidden role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div class="confirm-card">
+        <h2 id="confirm-title">清除存檔？</h2>
+        <p>這會刪除雲端進度與紀錄，無法復原。</p>
+        <div class="confirm-actions">
+          <button id="btn-clear-cancel" class="ghost" type="button">取消</button>
+          <button id="btn-clear-ok" class="danger" type="button">清除</button>
+        </div>
+      </div>
+    </div>
+
+    <p id="toast" class="toast" hidden role="status"></p>
+
+    <details class="credits">
+      <summary>署名／授權</summary>
+      <p>
+        音樂：Dylann Taylor — BLIPPY BITS「Dew」（CC0）。
+        音效：Kenney UI Audio、RPG Audio、Interface Sounds（CC0）。
+        場景為本作 SVG 原創。詳見 <code>ATTRIBUTION.md</code>。
+      </p>
+    </details>
+  </main>
+</body>
+</html>

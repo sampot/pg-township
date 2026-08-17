@@ -1,20 +1,38 @@
-const KEY = "/api/kv/pg-township:progress";
+/**
+ * 進度持久化：走宿主 `PG.kv`（禁止 localStorage 當權威）。
+ */
 
-export async function loadProgress(fetcher = fetch) {
+const KEY = "pg-township:progress";
+
+export async function loadProgress() {
   try {
-    const res = await fetcher(KEY);
-    if (!res.ok) return {};
-    const text = await res.text();
-    if (!text) return {};
-    return JSON.parse(text);
+    await window.PG.ready;
+    const raw = await window.PG.kv.get(KEY);
+    if (!raw) return {};
+    const data = JSON.parse(raw);
+    return data && typeof data === "object" ? data : {};
   } catch {
     return {};
   }
 }
 
-export async function saveProgress(data, fetcher = fetch) {
+export async function saveProgress(data) {
   try {
-    await fetcher(KEY, { method: "PUT", body: JSON.stringify(data) });
-  } catch {}
+    await window.PG.ready;
+    await window.PG.kv.put(KEY, JSON.stringify(data));
+  } catch {
+    /* 離線或尚未就緒時靜默略過 */
+  }
   return data;
+}
+
+export function mergeRecord(record, result) {
+  const base = { completed: 0, bestScore: null, wins: 0, ...(record ?? {}) };
+  if (!result) return base;
+  const better = base.bestScore === null || result.score > base.bestScore;
+  return {
+    completed: base.completed + 1,
+    wins: base.wins + (result.phase === "won" ? 1 : 0),
+    bestScore: better ? result.score : base.bestScore,
+  };
 }

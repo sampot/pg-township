@@ -1,9 +1,336 @@
-import {CONFIG,createGame,applyAction,applyOffline,getLegalActions,summarize} from "./game.js";
-import {loadProgress,saveProgress} from "./persist.js"; import {GameAudio} from "./audio.js";
-const $=q=>document.querySelector(q), audio=new GameAudio(); let state=createGame({seed:new Date().getDate()}),saved={};
-function stats(f){const id=CONFIG.id;if(id==="pg-township")return Object.entries(f.affection).map(([k,v])=>k+" "+v).join(" · ")+" · Day "+f.day;if(id==="pg-campusbond")return Object.entries(f.stats).map(([k,v])=>k+" "+v).join(" · ");if(id==="pg-ghostmark")return "Mission "+f.mission+" · Alert "+f.alert+"% · "+(f.target?"TARGET SECURED":"SEARCHING");if(id==="pg-blackward")return "🔋"+f.battery+" · noise "+f.noise+" · keys "+f.keys+"/3";if(id==="pg-blockcity")return "人口 "+f.pop+" · 幸福 "+f.happy+" · 污染 "+f.pollution;if(id==="pg-porttycoon")return "Q"+f.quarter+" · 市值 "+f.value+" / Rival "+f.rival;if(id==="pg-templeidle")return "香火 "+Math.floor(f.incense)+" · 香爐 "+f.generators+" · 金身 "+f.prestige;return "SCORE "+state.score+" · 資源 "+state.resources}
-function scene(f){const id=CONFIG.id;if(id==="pg-casefile")return '<div class="room"><b>'+f.rooms[f.room]+'</b><i class="hotspot"></i><span>'+f.clues.join(" / ")+'</span></div>';if(id==="pg-township")return '<div class="portrait">◐</div><blockquote>'+state.msg+'</blockquote>';if(id==="pg-campusbond")return '<div class="week">'+f.schedule.map((x,i)=>'<i title="'+x+'">'+(i+1)+'</i>').join("")+'</div>';if(id==="pg-blockcity")return '<div class="grid">'+f.grid.map(x=>'<i class="'+x+'"></i>').join("")+'</div>';if(id==="pg-porttycoon")return '<div class="chart">'+f.history.map((x,i)=>'<i style="height:'+x[0]*2+'px;left:'+i*12+'px"></i><b style="height:'+x[1]*2+'px;left:'+(i*12+5)+'px"></b>').join("")+'</div>';if(id==="pg-empirekitchen")return '<div class="orders">'+Array.from({length:f.orders},(_,i)=>'<i style="--n:'+i+'">單 '+(i+1)+'</i>').join("")+'</div>';if(id==="pg-seacast")return '<div class="sea"><span class="fish">𓆝</span><i style="height:'+f.tension+'%"></i><b>'+f.weather+' · '+["防波堤","紅樹林","外海礁"][f.spot]+'</b></div>';if(id==="pg-templeidle")return '<div class="temple"><span>卍</span><i>'+("✦".repeat(Math.min(16,f.generators*f.multiplier)))+'</i></div>';if(id==="pg-backdoor")return '<div class="map">'+Object.entries(f.skills).map(([k,v])=>'<i class="'+k+'">'+k.toUpperCase()+' '+v+'/4</i>').join("")+'</div>';return '<canvas id="field" width="640" height="260"></canvas>'}
-function canvas(f){const c=$("#field");if(!c)return;const x=c.getContext("2d");x.fillStyle=CONFIG.id==="pg-blackward"?"#08090a":"#0c1820";x.fillRect(0,0,640,260);x.strokeStyle="#263842";for(let i=0;i<10;i++)x.strokeRect(i*70,30+(i%2)*70,55,45);if(CONFIG.id==="pg-ghostmark"){x.fillStyle="#83f28f33";x.beginPath();x.moveTo(420,100);x.lineTo(220,20);x.lineTo(220,180);x.fill();x.fillStyle="#83f28f";x.fillRect(Math.min(570,f.distance*5),195,16,16);x.fillStyle="#ff5f5f";x.fillRect(420,90,14,22)}else{const g=x.createRadialGradient(180+f.distance*3,130,10,180+f.distance*3,130,Math.max(35,f.battery*2));g.addColorStop(0,"#fffbd0");g.addColorStop(1,"#000");x.fillStyle=g;x.globalCompositeOperation="screen";x.fillRect(0,0,640,260);x.globalCompositeOperation="source-over";x.fillStyle="#551b1b";x.fillRect(570-f.threat*3,80,10,80)}}
-function render(){const v=summarize(state);$("#stats").textContent=stats(v.flags);$("#message").textContent=v.msg;$("#scene").innerHTML=scene(v.flags);canvas(v.flags);const a=$("#actions");a.innerHTML="";for(const key of getLegalActions(state)){const b=document.createElement("button");b.textContent=CONFIG.actions[key];b.onclick=()=>{audio.fx(key==="commit"?"win":"tap");state=applyAction(state,key);void save();render()};a.append(b)}if(state.outcome!=="playing"){const b=document.createElement("button");b.className="restart";b.textContent="重新開始";b.onclick=()=>{state=createGame({seed:Date.now()%99});render()};a.append(b)}}
-async function save(){saved={state,best:Math.max(saved.best||0,state.score)};await saveProgress(saved)}
-async function boot(){document.title=CONFIG.title;$("#title").textContent=CONFIG.title;$("#genre").textContent=CONFIG.genre;$("#help").textContent=CONFIG.help;saved=await loadProgress();if(saved.state&&CONFIG.id==="pg-templeidle")state=applyOffline(saved.state);$("#sound").onclick=()=>audio.toggle($("#sound"));$("#start").onclick=async()=>{await audio.start();$("#intro").hidden=true;$("#game").hidden=false;render()};render()}boot();
+/**
+ * 潮生鎮誌 — UI（頁內確認／對話／行程；無原生 dialog）。
+ */
+
+import { portraitArt, sceneArt } from "./art.js";
+import { TownshipAudio } from "./audio.js";
+import {
+  CHARACTERS,
+  ENDINGS,
+  GAME_BRIEF,
+  GAME_TITLE,
+  GIFTS,
+  MAX_DAYS,
+  SCHEDULE_ACTIONS,
+  SLOT_LABEL,
+} from "./content.js";
+import * as G from "./game.js";
+import { loadProgress, mergeRecord, saveProgress } from "./persist.js";
+
+const $ = (id) => document.getElementById(id);
+const audio = new TownshipAudio();
+
+let state = G.createGame();
+let record = { completed: 0, bestScore: null, wins: 0 };
+let saveTimer = null;
+let toastTimer = null;
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    void saveProgress({ save: G.serialize(state), record });
+  }, 300);
+}
+
+function showToast(text) {
+  const node = $("toast");
+  node.textContent = text;
+  node.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    node.hidden = true;
+  }, 3200);
+}
+
+function act(next) {
+  const before = state.phase;
+  state = next;
+  const sound = state.event?.sound;
+  if (sound) void audio.play(sound, sound === "ending" ? 0.85 : 1);
+  if (before === "playing" && state.phase !== "playing") {
+    record = mergeRecord(record, { phase: state.phase, score: G.score(state) });
+  }
+  render();
+  scheduleSave();
+}
+
+function currentPlace() {
+  if (state.mode === "dialogue" && state.dialogue) {
+    const who = state.dialogue.who;
+    if (who === "mira") return "harbor";
+    if (who === "ren") return "depot";
+    if (who === "yu") return "archive";
+  }
+  if (state.mode === "shop") return "market";
+  if (state.slot === "evening") return "evening";
+  const last = state.schedule.at(-1);
+  if (last) {
+    const action = SCHEDULE_ACTIONS[last.action];
+    if (action?.place) return action.place;
+  }
+  return "harbor";
+}
+
+function renderHud() {
+  $("cal-label").textContent = G.calendarLabel(state);
+  $("energy").textContent = String(state.energy);
+  $("money").textContent = String(state.money);
+  $("memories").textContent = String(state.memories);
+  $("trust").textContent = String(state.trust);
+
+  const aff = $("affection");
+  aff.replaceChildren();
+  for (const [id, person] of Object.entries(CHARACTERS)) {
+    const chip = document.createElement("div");
+    chip.className = "aff-chip";
+    chip.style.setProperty("--c", person.color);
+    chip.innerHTML = `<span>${person.name}</span><b>${state.affection[id]}</b>`;
+    aff.append(chip);
+  }
+
+  const days = $("day-track");
+  days.replaceChildren();
+  for (let d = 1; d <= MAX_DAYS; d += 1) {
+    const dot = document.createElement("span");
+    dot.className = "day-dot";
+    dot.dataset.on = String(d <= state.day);
+    dot.dataset.current = String(d === state.day);
+    dot.setAttribute("aria-label", `第 ${d} 天`);
+    days.append(dot);
+  }
+}
+
+function renderStage() {
+  $("art").innerHTML = sceneArt(currentPlace());
+  $("narration").textContent = state.event?.text ?? "";
+  $("narration").dataset.kind = state.event?.kind ?? "info";
+}
+
+function renderSchedule() {
+  const host = $("schedule-actions");
+  host.hidden = state.mode !== "schedule";
+  host.replaceChildren();
+  if (state.mode !== "schedule") return;
+
+  const title = document.createElement("p");
+  title.className = "section-title";
+  title.textContent = `${SLOT_LABEL[state.slot] ?? ""}行程`;
+  host.append(title);
+
+  const grid = document.createElement("div");
+  grid.className = "action-grid";
+  for (const id of G.getScheduleActions(state)) {
+    const meta = SCHEDULE_ACTIONS[id];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "action-btn";
+    button.disabled = !G.canAffordAction(state, id);
+    button.innerHTML = `<span>${meta.label}</span><small>體力 ${meta.energy > 0 ? `-${meta.energy}` : "+25"}</small>`;
+    button.addEventListener("click", () => act(G.scheduleAction(state, id)));
+    grid.append(button);
+  }
+  host.append(grid);
+}
+
+function renderDialogue() {
+  const box = $("dialogue");
+  box.hidden = state.mode !== "dialogue" || !state.dialogue;
+  if (box.hidden) return;
+
+  const who = state.dialogue.who;
+  const person = CHARACTERS[who];
+  $("dialogue-portrait").innerHTML = portraitArt(who);
+  $("dialogue-name").textContent = person.name;
+  $("dialogue-role").textContent = person.role;
+  $("dialogue-line").textContent = state.dialogue.line;
+
+  const choices = $("dialogue-choices");
+  choices.replaceChildren();
+  for (const choice of state.dialogue.choices) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "choice-btn";
+    button.textContent = choice.text;
+    button.addEventListener("click", () => act(G.chooseDialogue(state, choice.id)));
+    choices.append(button);
+  }
+
+  const gifts = $("dialogue-gifts");
+  gifts.replaceChildren();
+  if (state.inventory.length === 0) return;
+  const hint = document.createElement("p");
+  hint.className = "section-title";
+  hint.textContent = "或贈送禮物";
+  gifts.append(hint);
+  for (const giftId of state.inventory) {
+    const gift = GIFTS[giftId];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "gift-btn";
+    button.innerHTML = `${gift.icon} ${gift.name}`;
+    button.addEventListener("click", () => act(G.giveGift(state, giftId, who)));
+    gifts.append(button);
+  }
+}
+
+function renderShop() {
+  const box = $("shop");
+  box.hidden = state.mode !== "shop";
+  if (box.hidden) return;
+
+  const list = $("shop-list");
+  list.replaceChildren();
+  for (const [id, gift] of Object.entries(GIFTS)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "shop-item";
+    button.disabled = state.money < gift.cost;
+    button.innerHTML = `<span>${gift.icon} ${gift.name}</span><span>${gift.cost} 元</span>`;
+    button.addEventListener("click", () => act(G.buyGift(state, id)));
+    list.append(button);
+  }
+
+  const bag = $("bag-list");
+  bag.replaceChildren();
+  if (state.inventory.length === 0) {
+    bag.textContent = "背包是空的。";
+    return;
+  }
+  bag.textContent = state.inventory.map((id) => GIFTS[id].name).join(" · ");
+}
+
+function renderEnding() {
+  const box = $("ending");
+  box.hidden = state.mode !== "ending";
+  if (box.hidden) return;
+
+  const ending = ENDINGS[state.ending];
+  $("ending-mark").textContent = state.phase === "won" ? "完稿" : "擱筆";
+  $("ending-mark").dataset.lost = String(state.phase === "lost");
+  $("ending-title").textContent = ending?.title ?? "";
+  $("ending-text").textContent = ending?.text ?? state.event?.text ?? "";
+  $("ending-score").textContent = `分數 ${G.score(state)} · 共同記憶 ${state.memories} · 行動 ${state.turns} 次`;
+}
+
+function renderLog() {
+  const list = $("log");
+  list.replaceChildren();
+  for (const entry of [...state.log].reverse().slice(0, 6)) {
+    const li = document.createElement("li");
+    li.dataset.kind = entry.kind;
+    li.textContent = entry.text;
+    list.append(li);
+  }
+}
+
+function render() {
+  renderHud();
+  renderStage();
+  renderSchedule();
+  renderDialogue();
+  renderShop();
+  renderEnding();
+  renderLog();
+  $("btn-shop-done").hidden = state.mode !== "shop";
+  $("play").dataset.mode = state.mode;
+}
+
+function bindLifecycle() {
+  const suspend = () => audio.suspend();
+  const resume = () => audio.resume();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") suspend();
+    else resume();
+  });
+  window.addEventListener("pagehide", suspend);
+}
+
+async function enterGame() {
+  await audio.unlock();
+  void audio.playBgm();
+  void audio.preload();
+  $("intro").hidden = true;
+  $("play").hidden = false;
+  render();
+}
+
+async function boot() {
+  document.title = GAME_TITLE;
+  $("title").textContent = GAME_TITLE;
+  $("brief").textContent = GAME_BRIEF;
+  bind();
+  bindLifecycle();
+  render();
+
+  try {
+    await window.PG.ready;
+  } catch {
+    showToast("尚未連上存檔服務，仍可離線遊玩。");
+  }
+
+  const stored = await loadProgress();
+  record = mergeRecord(stored.record, null);
+  if (record.completed > 0) {
+    const line = $("record");
+    line.hidden = false;
+    line.textContent = `已完稿 ${record.wins} 次 · 最佳分數 ${record.bestScore ?? "—"}`;
+  }
+
+  const resumed = G.restore(stored.save);
+  if (resumed && resumed.phase === "playing" && resumed.turns > 0) {
+    const button = $("btn-continue");
+    button.hidden = false;
+    button.textContent = `接續採訪（第 ${resumed.day} 天・${resumed.turns} 個行動）`;
+    button.addEventListener("click", () => {
+      state = resumed;
+      void enterGame();
+    });
+  }
+
+  $("btn-start").addEventListener("click", () => {
+    state = G.createGame();
+    void enterGame();
+  });
+}
+
+function bind() {
+  $("btn-sound").addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    const on = button.getAttribute("aria-pressed") !== "true";
+    button.setAttribute("aria-pressed", String(on));
+    button.setAttribute("aria-label", on ? "關閉音效" : "開啟音效");
+    audio.setEnabled(on);
+    if (on) void audio.playBgm();
+  });
+
+  $("btn-shop-done").addEventListener("click", () => act(G.closeShop(state)));
+
+  $("btn-restart").addEventListener("click", () => {
+    state = G.createGame();
+    act(state);
+  });
+
+  $("btn-clear-save").addEventListener("click", () => {
+    $("confirm-clear").hidden = false;
+  });
+
+  $("btn-clear-cancel").addEventListener("click", () => {
+    $("confirm-clear").hidden = true;
+  });
+
+  $("btn-clear-ok").addEventListener("click", async () => {
+    $("confirm-clear").hidden = true;
+    try {
+      await window.PG.ready;
+      await window.PG.kv.delete("pg-township:progress");
+    } catch {
+      showToast("清除存檔失敗，仍可重新開始本局。");
+    }
+    record = { completed: 0, bestScore: null, wins: 0 };
+    state = G.createGame();
+    act(state);
+    showToast("存檔已清除。");
+  });
+}
+
+void boot();
